@@ -1,6 +1,6 @@
 // Service worker de Control de Permitidos.
 // Siempre trae la versión más nueva de internet; si no hay conexión, usa la copia guardada.
-const CACHE = 'permitidos-v2';
+const CACHE = 'permitidos-v3';
 const BASICOS = ['./', './index.html', './app.js', './config.js', './permitidos.css', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

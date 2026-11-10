@@ -162,8 +162,17 @@ const Cargando = ({ error, onReintentar }) => error
 const Ctx = createContext(null);
 const useApp = () => useContext(Ctx);
 
-function Encabezado({ titulo, sub, eti, children }) {
-  return html`<div className="encabezado"><div>${eti && html`<span className="etiqueta-sec">${eti}</span>`}<h1>${titulo}</h1>${sub && html`<p>${sub}</p>`}</div>${children && html`<div className="row">${children}</div>`}</div>`;
+function Encabezado({ titulo, sub, eti, ayuda, children }) {
+  const clave = 'cp-ayuda-' + normal(titulo).slice(0, 30);
+  const [abierta, setAbierta] = useState(() => !!ayuda && leer(clave) !== 'no');
+  const cerrar = () => { guardar(clave, 'no'); setAbierta(false); };
+  return html`<${Fragment}>
+    <div className="encabezado"><div>${eti && html`<span className="etiqueta-sec">${eti}</span>`}<h1>${titulo}</h1>${sub && html`<p>${sub}</p>`}</div>
+      <div className="row">${ayuda && !abierta && html`<button className="btn btn-ayuda" onClick=${() => setAbierta(true)} aria-label="¿Cómo se usa esta pantalla?">?</button>`}${children}</div></div>
+    ${ayuda && abierta && html`<div className="ayuda" role="note"><div className="ayuda-ico">?</div><div className="ayuda-txt"><b>¿Cómo se usa?</b>
+      <ol>${ayuda.map((x, i) => html`<li key=${i}>${x}</li>`)}</ol></div>
+      <button className="btn btn-sm" onClick=${cerrar}>Entendido</button></div>`}
+  <//>`;
 }
 const Kpi = ({ t, v, s, cls }) => html`<div className=${'kpi ' + (cls || '')}><span>${t}</span><strong>${v}</strong>${s && html`<small>${s}</small>`}</div>`;
 
@@ -345,26 +354,34 @@ function VistaPanel() {
     ].sort((a, b) => b.t.localeCompare(a.t)).slice(0, 10);
     return { inf, movs, deudores };
   }, []);
-  const { localPorId, nombreLocal } = useApp();
+  const { localPorId, nombreLocal, cat } = useApp();
   const saludo = (() => { const h = new Date().getHours(); return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'; })();
   const mes = MESES[new Date().getMonth()];
   return html`<${Fragment}>
-    <${Encabezado} eti=${fechaCorta(hoy())} titulo=${`${saludo}, ${perfil.nombre.split(' ')[0]}`} sub=${`Así va ${perfil.tienda.nombre} en ${mes}.`}>
-      <button className="btn" onClick=${() => ir('cobros')}><${Ico} n="cobros" />Registrar cobro</button>
-      <button className="btn btn-primary" onClick=${() => ir('entregas', { nueva: true })}><${Ico} n="mas" />Nueva entrega</button>
-    <//>
+    <${Encabezado} eti=${fechaCorta(hoy())} titulo=${`${saludo}, ${perfil.nombre.split(' ')[0]}`} sub="¿Qué quieres hacer hoy?" />
     ${!r.datos ? html`<${Cargando} error=${r.error} onReintentar=${r.recargar} />` : html`<${Fragment}>
-      <div className="kpis">
-        <${Kpi} t="Mercancía entregada" v=${pesos(r.datos.inf.entregado)} s=${`En ${mes}, ${plural(r.datos.inf.entregas, 'entrega', 'entregas')}`} />
-        <${Kpi} t="Pendiente de cobro" v=${pesos(r.datos.inf.saldo_total)} s=${r.datos.inf.atrasados ? `${plural(r.datos.inf.atrasados, 'local atrasado', 'locales atrasados')}` : 'Todos los locales'} cls=${r.datos.inf.atrasados ? 'mora' : 'alerta'} />
-        <${Kpi} t="Recaudado" v=${pesos(r.datos.inf.recaudado)} s=${`En ${mes}`} cls="bueno" />
-        <${Kpi} t="Prendas entregadas" v=${numero(r.datos.inf.prendas_entregadas)} s=${`${numero(r.datos.inf.prendas_en_locales)} siguen en los locales`} />
+      <div className="acciones-grandes">
+        <button className="accion-g" onClick=${() => ir('entregas', { nueva: true })}><span className="ico-caja"><${Ico} n="entregas" /></span><b>Dejé mercancía</b><small>Anota las prendas que le dejaste a un local</small></button>
+        <button className="accion-g" onClick=${() => ir('cobros')}><span className="ico-caja"><${Ico} n="cobros" /></span><b>Me pagaron</b><small>Registra el dinero que te dio un local</small></button>
+        <button className="accion-g" onClick=${() => ir('devoluciones')}><span className="ico-caja"><${Ico} n="devoluciones" /></span><b>Me devolvieron</b><small>Prendas que el local no vendió</small></button>
       </div>
-      <div className="acciones-rapidas">
-        <button className="accion" onClick=${() => ir('entregas', { nueva: true })}><span className="ico-caja"><${Ico} n="entregas" /></span><span>Nueva entrega<small>Deja mercancía en un local</small></span></button>
-        <button className="accion" onClick=${() => ir('cobros')}><span className="ico-caja"><${Ico} n="cobros" /></span><span>Registrar cobro<small>Pago, abono o prendas pagadas</small></span></button>
-        <button className="accion" onClick=${() => ir('devoluciones')}><span className="ico-caja"><${Ico} n="devoluciones" /></span><span>Devolución<small>Prendas que regresan a bodega</small></span></button>
-        <button className="accion" onClick=${() => ir('locales', { filtro: 'atrasados' })}><span className="ico-caja"><${Ico} n="reloj" /></span><span>Locales atrasados<small>Más de ${r.datos.inf.dias_atraso} días sin pagar</small></span></button>
+      ${(() => {
+        const pasos = [
+          { ok: cat.prendas.length > 0, t: 'Crea tus prendas', d: 'Referencia, nombre y precio de lo que vendes.', a: () => ir('inventario') },
+          { ok: cat.locales.length > 0, t: 'Agrega un local', d: 'El centro comercial y el local donde dejas mercancía.', a: () => ir('locales') },
+          { ok: r.datos.inf.entregas > 0 || r.datos.movs.length > 0, t: 'Registra tu primera entrega', d: 'Lo que le dejaste al local.', a: () => ir('entregas', { nueva: true }) },
+          { ok: r.datos.movs.some(m => m.k[0] === 'c'), t: 'Cobra cuando te paguen', d: 'Así sabes siempre quién te debe.', a: () => ir('cobros') },
+        ];
+        if (pasos.every(p => p.ok)) return null;
+        return html`<div className="panel primeros"><h2>Primeros pasos</h2><p className="sub">Sigue estos pasos en orden y en pocos minutos tendrás todo funcionando.</p>
+          <ol className="pasos">${pasos.map((p, i) => html`<li key=${i} className=${p.ok ? 'hecho' : ''}><span className="num-paso">${p.ok ? '✓' : i + 1}</span>
+            <div><b>${p.t}</b><small>${p.d}</small></div>${!p.ok && html`<button className="btn btn-sm btn-primary" onClick=${p.a}>Hacerlo</button>`}</li>`)}</ol></div>`;
+      })()}
+      <div className="kpis">
+        <${Kpi} t="Te deben" v=${pesos(r.datos.inf.saldo_total)} s=${r.datos.inf.atrasados ? `${plural(r.datos.inf.atrasados, 'local lleva', 'locales llevan')} más de ${r.datos.inf.dias_atraso} días sin pagar` : 'Entre todos los locales'} cls=${r.datos.inf.atrasados ? 'mora' : 'alerta'} />
+        <${Kpi} t="Te pagaron este mes" v=${pesos(r.datos.inf.recaudado)} s=${`En ${mes}`} cls="bueno" />
+        <${Kpi} t="Dejaste este mes" v=${pesos(r.datos.inf.entregado)} s=${plural(r.datos.inf.entregas, 'entrega', 'entregas')} />
+        <${Kpi} t="Prendas en los locales" v=${numero(r.datos.inf.prendas_en_locales)} s="Sin pagar ni devolver" />
       </div>
       <div className="col-ancha">
         <div className="panel"><div className="panel-cab"><div><h2>Últimos movimientos</h2><p className="sub">Entregas, cobros y devoluciones más recientes</p></div></div>
@@ -376,7 +393,7 @@ function VistaPanel() {
               <td className="num">${pesos(m.valor)}</td><td><span className=${'badge ' + m.estado[0]}>${m.estado[1]}</span></td></tr>`; })}</tbody>
           </table></div>` : html`<${Vacio} ico="entregas">Aún no hay movimientos. Empieza registrando una entrega.<//>`}
         </div>
-        <div className="panel"><div className="panel-cab"><div><h2>Los que más deben</h2><p className="sub">Saldo pendiente por local</p></div><button className="link" onClick=${() => ir('locales', { filtro: 'saldo' })}>Ver todos</button></div>
+        <div className="panel"><div className="panel-cab"><div><h2>Los que más te deben</h2><p className="sub">Toca uno para cobrarle</p></div><button className="link" onClick=${() => ir('locales', { filtro: 'saldo' })}>Ver todos</button></div>
           ${r.datos.deudores.length ? html`<div className="tabla-wrap"><table><tbody>${r.datos.deudores.map(d => html`<tr key=${d.local_id} className="clic" onClick=${() => ir('local', { id: d.local_id })}>
             <td><b>${nombreLocal(d.local_id)}</b><br /><span className="small muted">${d.dias_sin_pagar > r.datos.inf.dias_atraso ? html`<span className="badge bajo">${d.dias_sin_pagar} días sin pagar</span>` : `${plural(d.dias_sin_pagar || 0, 'día', 'días')} sin pagar`}</span></td>
             <td className="num"><b>${pesos(d.saldo)}</b></td></tr>`)}</tbody></table></div>` : html`<${Vacio}>Nadie debe en este momento.<//>`}
@@ -452,7 +469,7 @@ function FormEntrega({ localInicial, onSalir }) {
   }
   return html`<${Fragment}>
     <button className="link volver" onClick=${onSalir}><${Ico} n="atras" />Volver a entregas</button>
-    <${Encabezado} eti="Remisión" titulo="Nueva entrega" sub="Elige el local, agrega las prendas y el sistema calcula los totales." />
+    <${Encabezado} eti="Paso a paso" titulo="Dejar mercancía en un local" sub="Anota qué prendas le dejas al local. Después, cuando las venda, se las cobras." ayuda=${['Busca el local (si es nuevo, créalo ahí mismo).', 'Agrega cada prenda con la cantidad que le dejas.', 'Toca "Registrar entrega". El local queda debiendo ese valor y las prendas salen de tu bodega.']} />
     <div className="pos pos-entrega">
       <div className="apilado">
         <div className="panel">
@@ -515,7 +532,7 @@ function ListaEntregas({ onNueva }) {
     (!f.estado || (f.estado === 'pendiente' ? e.estado === 'activa' && e.pend > 0 : f.estado === 'pagada' ? e.estado === 'activa' && e.pend <= 0 : e.estado === 'anulada')));
   const act = filas.filter(e => e.estado === 'activa');
   return html`<${Fragment}>
-    <${Encabezado} eti="Operación" titulo="Entregas" sub="Mercancía que se deja en los locales para que la vendan.">
+    <${Encabezado} eti="Operación" titulo="Entregas" sub="Todo lo que has dejado en los locales para que lo vendan." ayuda=${['Cada vez que dejas prendas en un local, registra una entrega con el botón "Nueva entrega".', 'Toca una entrega para ver qué prendas siguen en el local, cuáles pagó y cuáles devolvió.']}>
       <button className="btn btn-primary" onClick=${onNueva}><${Ico} n="mas" />Nueva entrega</button>
     <//>
     <div className="filtros">
@@ -608,7 +625,7 @@ function VistaCobros({ params }) {
   const [vuelta, setVuelta] = useState(0);
   useEffect(() => { if (params?.local) setLocal(params.local); }, [params]);
   return html`<${Fragment}>
-    <${Encabezado} eti="Operación" titulo="Cobros" sub="Cuando alguien pasa por el local: registra el dinero recibido y qué prendas se pagaron." />
+    <${Encabezado} eti="Operación" titulo="Cobrar a un local" sub="Usa esta pantalla cuando el local te pague." ayuda=${['Elige el local: verás las prendas que te debe.', 'Escribe cuántas de cada prenda te pagó, o solo el dinero que te dio (eso es un abono: un pago parcial).', 'Elige cómo te pagó y toca "Registrar cobro". Lo que debe el local baja de inmediato.']} />
     <${FormCobro} local=${local} setLocal=${setLocal} onHecho=${() => setVuelta(v => v + 1)} />
     <${ListaCobros} vuelta=${vuelta} />
   <//>`;
@@ -777,7 +794,7 @@ function VistaDevoluciones({ params }) {
     setOcupado(false);
   };
   return html`<${Fragment}>
-    <${Encabezado} eti="Operación" titulo="Devoluciones" sub="Prendas que el local regresa: se descuentan de su saldo y vuelven al inventario." />
+    <${Encabezado} eti="Operación" titulo="Devoluciones" sub="Prendas que el local no vendió y te regresa." ayuda=${['Busca el local y la prenda que te devuelve.', 'Escribe la cantidad. Esas prendas vuelven a tu bodega y el local deja de deberlas.']} />
     <div className="panel">
       <h2>Registrar devolución</h2><p className="sub">Busca el local que devuelve mercancía.</p>
       <${SelectorLocal} valor=${local} onCambio=${setLocal} permitirNuevo=${false} />
@@ -829,7 +846,7 @@ function VistaPermitidos() {
   }, [r.datos, f]);
   const total = filas.reduce((t, i) => t + Number(i.valor_pendiente), 0);
   return html`<${Fragment}>
-    <${Encabezado} eti="Control" titulo="Control de permitidos" sub="Cada prenda que sigue en un local: fecha, cantidad y valor pendiente.">
+    <${Encabezado} eti="Control" titulo="Prendas en los locales" sub="Lo que dejaste y todavía no te han pagado ni devuelto." ayuda=${['Cada fila es una prenda que sigue en un local.', 'Las que llevan muchos días aparecen marcadas: es buen momento para pasar a cobrar.']}>
       <button className="btn" disabled=${!filas.length} onClick=${() => descargarCSV(`permitidos_${hoy()}.csv`, [['Centro comercial', 'Local', 'Entrega', 'Fecha', 'Días', 'Prenda', 'Detalle', 'Cantidad', 'Pagadas', 'Devueltas', 'En el local', 'Precio', 'Valor pendiente'],
         ...filas.map(i => [i.centro, i.local, i.entrega_numero, i.fecha, i.dias, i.descripcion, i.detalle || '', i.cantidad, i.cant_pagada, i.cant_devuelta, i.pendiente, i.precio, i.valor_pendiente])])}><${Ico} n="descargar" />Descargar</button>
     <//>
@@ -879,7 +896,7 @@ function VistaLocales({ params }) {
   const filas = (r.datos || []).filter(l => (!f.centro || String(l.centro_id) === f.centro) && (!f.q || normal(`${l.centro} ${l.local} ${l.encargado || ''}`).includes(normal(f.q))) &&
     (f.filtro === 'saldo' ? l.saldo > 0 : f.filtro === 'atrasados' ? l.saldo > 0 && l.dias_sin_pagar > atraso : f.filtro === 'mercancia' ? l.prendas_en_local > 0 : f.filtro === 'inactivos' ? !l.activo : l.activo));
   return html`<${Fragment}>
-    <${Encabezado} eti="Control" titulo="Locales" sub="Clientes y vendedores en los centros comerciales, con lo que deben.">
+    <${Encabezado} eti="Control" titulo="Locales" sub="Los locales donde dejas mercancía y cuánto te debe cada uno." ayuda=${['"Debe" es lo que el local te tiene pendiente por pagar.', 'Toca un local para ver su historia completa y cobrarle o recibir devoluciones desde ahí.']}>
       <button className="btn" onClick=${() => setNuevoCentro(true)}><${Ico} n="mas" />Centro comercial</button>
       <button className="btn btn-primary" onClick=${() => setNuevo(true)}><${Ico} n="mas" />Nuevo local</button>
     <//>
@@ -1010,7 +1027,7 @@ function VistaInventario() {
   const act = cat.prendas.filter(p => p.activo);
   const bodega = act.reduce((t, p) => t + Math.max(0, p.stock), 0);
   return html`<${Fragment}>
-    <${Encabezado} eti="Bodega" titulo="Inventario" sub="Existencias en bodega. Las entregas las descuentan y las devoluciones las suman.">
+    <${Encabezado} eti="Bodega" titulo="Mis prendas" sub="Las prendas que vendes y cuántas tienes en bodega." ayuda=${['Crea aquí cada prenda (referencia, nombre y precio) antes de entregarla.', 'Cuando te llegue mercancía nueva usa "Entrada". Las entregas restan de la bodega y las devoluciones suman solas.']}>
       ${esDueno && html`<button className="btn" onClick=${() => setModal({ tipo: 'entrada' })}><${Ico} n="inventario" />Entrada de mercancía</button>
       <button className="btn btn-primary" onClick=${() => setModal({ tipo: 'prenda' })}><${Ico} n="mas" />Nueva prenda</button>`}
     <//>
@@ -1267,17 +1284,18 @@ function VistaConfig() {
    ===================================================================== */
 const VISTAS = {
   inicio: { t: 'Inicio', c: VistaPanel },
-  entregas: { t: 'Entregas', c: VistaEntregas },
-  cobros: { t: 'Cobros', c: VistaCobros },
-  devoluciones: { t: 'Devoluciones', c: VistaDevoluciones },
-  permitidos: { t: 'Permitidos', c: VistaPermitidos },
+  entregas: { t: 'Entregar', c: VistaEntregas },
+  cobros: { t: 'Cobrar', c: VistaCobros },
   locales: { t: 'Locales', c: VistaLocales },
-  inventario: { t: 'Inventario', c: VistaInventario },
+  inventario: { t: 'Mis prendas', c: VistaInventario },
+  devoluciones: { t: 'Devoluciones', c: VistaDevoluciones },
+  permitidos: { t: 'En locales', c: VistaPermitidos },
   informes: { t: 'Informes', c: VistaInformes, dueno: true },
   config: { t: 'Configuración', c: VistaConfig, dueno: true, oculto: true },
   local: { t: 'Local', c: VistaLocal, oculto: true, padre: 'locales' },
 };
-const TABBAR = ['inicio', 'entregas', 'cobros', 'permitidos'];
+const TABBAR = ['inicio', 'entregas', 'cobros', 'locales'];
+const PRINCIPALES = ['inicio', 'entregas', 'cobros', 'locales', 'inventario'];
 
 const MarcaTag = () => html`<span className="marca-tag"><${Ico} n="entregas" /></span>`;
 
@@ -1367,6 +1385,10 @@ function App() {
       if (!ut) return setEstado({ fase: 'aviso', titulo: 'Tu cuenta aún no tiene tienda', texto: `La cuenta ${session.user.email} todavía no está vinculada a ninguna tienda. Pide al administrador que la vincule y luego toca "Reintentar".`, reintentar: true });
       if (ut.tiendas?.estado === 'suspendida') return setEstado({ fase: 'aviso', titulo: 'Servicio suspendido', texto: 'El servicio de esta cuenta está suspendido. Comunícate con el administrador para reactivarlo.' });
       if (ut.tiendas?.estado !== 'activa') return setEstado({ fase: 'aviso', titulo: 'Cuenta no disponible', texto: 'Esta cuenta todavía no está activa. Comunícate con el administrador.', reintentar: true });
+      if (!adm) {
+        const { data: acceso, error: eAcc } = await db.rpc('tiene_software', { p_codigo: 'permitidos' });
+        if (!eAcc && acceso === false) return setEstado({ fase: 'aviso', titulo: 'Sin acceso a Control de Permitidos', texto: 'Tu cuenta existe, pero no tiene activado este programa. Pide al administrador que te lo active y toca "Reintentar".', reintentar: true });
+      }
       const nombre = ut.nombre || session.user.email.split('@')[0];
       setPerfil({ uid: session.user.id, email: session.user.email, nombre, rol: ut.rol, tienda: ut.tiendas, esAdmin: !!adm });
       await recargarCat();
@@ -1411,6 +1433,8 @@ function App() {
   const activa = V.padre || vista;
   const menu = permitidas.filter(k => !VISTAS[k].oculto);
   const enHoja = permitidas.filter(k => !TABBAR.includes(k) && (!VISTAS[k].oculto || k === 'config'));
+  const enMas = permitidas.filter(k => !PRINCIPALES.includes(k) && (!VISTAS[k].oculto || k === 'config'));
+  const enMenuMas = window.matchMedia('(max-width: 760px)').matches ? enHoja : enMas;
   const cambiarTema = () => { const t = tema === 'dark' ? 'light' : 'dark'; document.documentElement.dataset.theme = t; guardar('tema', t); setTema(t); setPopUsuario(false); setHoja(false); };
   const salir = async () => { await db.auth.signOut(); location.reload(); };
 
@@ -1418,7 +1442,8 @@ function App() {
     ${offline && html`<div id="offline">Sin conexión a internet. Los cambios no se guardarán hasta que vuelva.</div>`}
     <header className="cab"><div className="cab-in">
       <div className="marca"><${MarcaTag} /><div><b>Permitidos</b><small>${perfil.tienda.nombre}</small></div></div>
-      <nav className="nav-sup" aria-label="Secciones">${menu.map(k => html`<button key=${k} className=${activa === k ? 'activa' : ''} aria-current=${activa === k ? 'page' : undefined} title=${VISTAS[k].t} onClick=${() => ir(k)}><${Ico} n=${k} /><span>${VISTAS[k].t}</span></button>`)}</nav>
+      <nav className="nav-sup" aria-label="Secciones">${menu.filter(k => PRINCIPALES.includes(k)).map(k => html`<button key=${k} className=${activa === k ? 'activa' : ''} aria-current=${activa === k ? 'page' : undefined} title=${VISTAS[k].t} onClick=${() => ir(k)}><${Ico} n=${k} /><span>${VISTAS[k].t}</span></button>`)}
+        <button className=${enMas.includes(activa) ? 'activa' : ''} title="Más" onClick=${() => setHoja(true)}><${Ico} n="menu" /><span>Más</span></button></nav>
       <div className="cab-der">
         <button className="btn btn-primary" onClick=${() => ir('entregas', { nueva: true })} aria-label="Nueva entrega"><${Ico} n="mas" /><span>Entrega</span></button>
         <button className="usuario-btn" onClick=${() => setPopUsuario(!popUsuario)} aria-label="Mi cuenta" aria-expanded=${popUsuario}>
@@ -1438,7 +1463,7 @@ function App() {
       <button className=${enHoja.includes(activa) ? 'activa' : ''} onClick=${() => setHoja(true)}><${Ico} n="menu" /><span>Más</span></button>
     </nav>
     ${hoja && html`<div className="hoja-fondo" onClick=${e => e.target === e.currentTarget && setHoja(false)}><div className="hoja" role="dialog" aria-label="Más secciones">
-      ${enHoja.map(k => html`<button key=${k} className=${activa === k ? 'activa' : ''} onClick=${() => ir(k)}><${Ico} n=${k} /><span>${VISTAS[k].t}</span></button>`)}
+      ${enMenuMas.map(k => html`<button key=${k} title=${VISTAS[k].t} className=${activa === k ? 'activa' : ''} onClick=${() => ir(k)}><${Ico} n=${k} /><span>${VISTAS[k].t}</span></button>`)}
       ${perfil.esAdmin && html`<button onClick=${() => window.open(CONFIG.adminUrl, '_blank', 'noopener')}><${Ico} n="escudo" /><span>Panel de administración</span></button>`}
       <button onClick=${cambiarTema}><${Ico} n=${tema === 'dark' ? 'sol' : 'luna'} /><span>${tema === 'dark' ? 'Modo claro' : 'Modo oscuro'}</span></button>
       <button onClick=${salir}><${Ico} n="salir" /><span>Cerrar sesión</span></button>
